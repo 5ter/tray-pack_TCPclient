@@ -6,9 +6,12 @@ import socket
 import json
 
 logging.basicConfig(
-    filename="plc_client.log",
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s"
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler("plc_client.log"),
+        logging.StreamHandler(),
+    ],
 )
 
 PLC_IP = "192.168.6.6"
@@ -25,8 +28,7 @@ server_socket = None
 last_seen = {7: 0, 8: 0}
 
 def process_event(label):
-    print(f"Processing event: {label}")
-    logging.info(f"Event: {label}")
+    logging.info("Received status from PLC: %s", label)
     send_to_server(label)
 
 
@@ -54,8 +56,9 @@ def send_to_server(label):
             )
 
         payload = json.dumps({"id": MACHINE_ID, "status": label}) + "\n"
+        logging.info("Sending JSON to result server: %s", payload.strip())
         server_socket.sendall(payload.encode("utf-8"))
-        logging.info(f"Sent result to server: {payload.strip()}")
+        logging.info("JSON sent to result server")
     except OSError as e:
         logging.error(f"Could not send result '{label}' to server: {e}")
         close_server_connection()
@@ -69,7 +72,7 @@ def main_loop():
     while True:
         try:
             ensure_connected()
-            rr = client.read_coils(7, count=2, slave=UNIT_ID)
+            rr = client.read_coils(7, count=2)
 
             if rr.isError():
                 logging.error(f"Modbus error response: {rr}")
