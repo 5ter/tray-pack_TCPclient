@@ -1,0 +1,55 @@
+2026-09-18 17:23:03,735 WARNING Reconnecting to PLC...
+2026-09-18 17:23:04,747 ERROR Connection to (192.168.6.6, 502) failed: timed out
+2026-09-18 17:23:04,748 CRITICAL Unhandled exception, restarting loop: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+Traceback (most recent call last):
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 105, in <module>
+    main_loop()
+    ~~~~~~~~~^^
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 75, in main_loop
+    rr = client.read_coils(7, count=2, slave=UNIT_ID)
+TypeError: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+2026-09-18 17:23:06,753 WARNING Reconnecting to PLC...
+2026-09-18 17:23:07,768 ERROR Repeating....
+2026-09-18 17:23:07,768 CRITICAL Unhandled exception, restarting loop: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+Traceback (most recent call last):
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 105, in <module>
+    main_loop()
+    ~~~~~~~~~^^
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 75, in main_loop
+    rr = client.read_coils(7, count=2, slave=UNIT_ID)
+TypeError: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+2026-09-18 17:23:09,770 WARNING Reconnecting to PLC...
+2026-09-18 17:23:10,779 CRITICAL Unhandled exception, restarting loop: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+Traceback (most recent call last):
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 105, in <module>
+    main_loop()
+    ~~~~~~~~~^^
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 75, in main_loop
+    rr = client.read_coils(7, count=2, slave=UNIT_ID)
+TypeError: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+2026-09-18 17:23:12,781 WARNING Reconnecting to PLC...
+2026-09-18 17:23:13,788 CRITICAL Unhandled exception, restarting loop: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+Traceback (most recent call last):
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 105, in <module>
+    main_loop()
+    ~~~~~~~~~^^
+  File "C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient\main.py", line 75, in main_loop
+    rr = client.read_coils(7, count=2, slave=UNIT_ID)
+TypeError: ModbusClientMixin.read_coils() got an unexpected keyword argument 'slave'
+2026-09-18 17:23:49,603 WARNING Reconnecting to PLC...
+2026-09-18 17:23:50,620 ERROR Connection to (192.168.6.6, 502) failed: timed out
+2026-09-18 17:23:51,630 ERROR Repeating....
+2026-09-18 17:23:51,631 ERROR Communication error: Modbus Error: [Connection] Failed to connect[ModbusTcpClient 192.168.6.6:502]
+2026-09-18 17:23:52,832 WARNING Reconnecting to PLC...
+2026-09-18 17:23:54,851 ERROR Communication error: Modbus Error: [Connection] Failed to connect[ModbusTcpClient 192.168.6.6:502]
+2026-09-18 17:23:56,051 WARNING Reconnecting to PLC...
+2026-09-18 17:23:58,068 ERROR Communication error: Modbus Error: [Connection] Failed to connect[ModbusTcpClient 192.168.6.6:502]
+2026-09-18 17:23:59,269 WARNING Reconnecting to PLC...
+2026-09-18 17:24:01,293 ERROR Communication error: Modbus Error: [Connection] Failed to connect[ModbusTcpClient 192.168.6.6:502]
+2026-09-18 17:24:02,494 WARNING Reconnecting to PLC...
+2026-09-18 17:24:04,507 ERROR Communication error: Modbus Error: [Connection] Failed to connect[ModbusTcpClient 192.168.6.6:502]
+2026-09-18 17:24:05,708 WARNING Reconnecting to PLC...
+2026-09-18 17:24:07,730 ERROR Communication error: Modbus Error: [Connection] Failed to connect[ModbusTcpClient 192.168.6.6:502]
+2026-09-18 17:24:08,931 WARNING Reconnecting to PLC...
+2026-09-18 17:24:10,952 ERROR Communication error: Modbus Error: [Connection] Failed to connect[ModbusTcpClient 192.168.6.6:502]
+2026-09-18 17:24:12,153 WARNING Reconnecting to PLC...
