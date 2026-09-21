@@ -1,0 +1,6 @@
+# add the .venv directory to the .gitignore file
+.venv/
+
+# add the logs directory and plc_logs file to the .gitignore file
+logs/
+plc_client.py
