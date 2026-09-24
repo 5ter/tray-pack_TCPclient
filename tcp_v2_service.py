@@ -2,6 +2,7 @@
 
 import logging
 import time
+from collections.abc import Callable
 
 from pymodbus.exceptions import ConnectionException, ModbusException
 
@@ -14,7 +15,11 @@ from tcp_v2_sender import ResultForwarder
 class TrayInspectionService:
     """Coordinates the small modules without containing PLC protocol details."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        event_handler: Callable[[InspectionEvent], None] | None = None,
+    ) -> None:
         if settings.ok_coil_address == settings.ng_coil_address:
             raise ValueError("OK_COIL_ADDRESS and NG_COIL_ADDRESS must be different")
         self._settings = settings
@@ -24,6 +29,7 @@ class TrayInspectionService:
         self._previous: LatchState | None = None
         self._running = True
         self._last_forward_attempt = 0.0
+        self._event_handler = event_handler
 
     def stop(self, *_: object) -> None:
         self._running = False
@@ -46,7 +52,10 @@ class TrayInspectionService:
         For now this only logs. It is intentionally safe: this version cannot
         print a label or alter a Box ID until the product-data contract is added.
         """
-        logging.info("Event ready for future PC pipeline: %s", event.status)
+        if self._event_handler is None:
+            logging.info("Event ready for future PC pipeline: %s", event.status)
+            return
+        self._event_handler(event)
 
     def _process_latch_change(self, current: LatchState) -> None:
         if self._previous is None:
