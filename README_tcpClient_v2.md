@@ -132,6 +132,28 @@ $env:ENABLE_PRINTING = 'true'
 python .\tcpClient_v2.py
 ```
 
+### Quick printer-only test when no PLC result is available
+
+If a valid active job already exists in `active_job.json`, use the independent
+test printer utility. It does not start the PLC poller, modify `active_job.json`,
+increment a real Box ID, or call the database update API.
+
+First preview the non-production label data:
+
+```powershell
+python .\test_print_current_job.py
+```
+
+Then, only when the preview is correct, send one physical **TEST** label:
+
+```powershell
+python .\test_print_current_job.py --send
+```
+
+The test label replaces the first four characters of the stored Box ID with
+`TEST` and adds `TEST PRINT - DO NOT SHIP` to Remarks. Do not use it for a real
+shipment.
+
 With printing enabled, an M7 event runs this compatibility sequence:
 
 ```text
@@ -182,3 +204,42 @@ python .\test_plc_latches.py
 
 Do not change coil numbers unless the read-only test proves the mapping wrong.
 Modbus address bases can differ between PLC configurations.
+
+## Updating the NSSM service
+
+The service must run `tcpClient_v2.py`, not the older `main.py`.  Stop the
+service before changing it, and use the same Python executable in which
+`pymodbus` was installed.
+
+In an Administrator PowerShell window, replace `<SERVICE_NAME>` with the
+existing NSSM service name:
+
+```powershell
+$python = (Get-Command python).Source
+$appDir = 'C:\Users\fakrul.hussin\OneDrive - ACTMAX SDN BHD\Tray Packing\tray-pack_TCPclient'
+
+nssm stop '<SERVICE_NAME>'
+nssm set '<SERVICE_NAME>' Application $python
+nssm set '<SERVICE_NAME>' AppDirectory $appDir
+nssm set '<SERVICE_NAME>' AppParameters '-u tcpClient_v2.py'
+nssm set '<SERVICE_NAME>' AppEnvironmentExtra 'ENABLE_PRINTING=false' 'FORWARD_RESULTS=false'
+nssm start '<SERVICE_NAME>'
+nssm status '<SERVICE_NAME>'
+```
+
+Keep `ENABLE_PRINTING=false` while confirming that the service can log in,
+reach the PLC, and use the correct saved job.  After a controlled printer test
+and database check, replace the service environment with:
+
+```powershell
+nssm stop '<SERVICE_NAME>'
+nssm set '<SERVICE_NAME>' AppEnvironmentExtra 'ENABLE_PRINTING=true' 'FORWARD_RESULTS=false'
+nssm start '<SERVICE_NAME>'
+```
+
+`AppEnvironmentExtra` is the NSSM setting used for additional environment
+variables. If `nssm get '<SERVICE_NAME>' AppEnvironmentExtra` shows existing
+variables that the service needs, include them again when setting the values
+above. Check `tcp_client_v2.log` in this folder after startup. Only one
+application may use local TCP port 3000, so stop any old `Tray_Packing.js` /
+PM2 process before starting this service.
