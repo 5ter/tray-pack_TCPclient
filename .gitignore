@@ -5,5 +5,5 @@
 logs/
 plc_client.log
 tcp_client_v2.log
-tray_event.sqlite3
+*.sqlite3
 __pycache__/
