@@ -7,3 +7,4 @@ plc_client.log
 tcp_client_v2.log
 *.sqlite3
 __pycache__/
+tray_events.*

@@ -66,7 +66,7 @@ class Settings:
     job_state_path: Path = Path(_text("JOB_STATE_PATH", str(BASE_DIR / "active_job.json")))
     web_host: str = _text("WEB_HOST", "127.0.0.1")
     web_port: int = _integer("WEB_PORT", 3000)
-    web_root: Path = Path(_text("WEB_ROOT", str(BASE_DIR.parent / "CODING")))
+    web_root: Path = Path(_text("WEB_ROOT", str(BASE_DIR.parent / "TrayPack-Modbus")))
     result_server_ip: str = _text("RESULT_SERVER_IP", "192.168.40.29")
     result_server_port: int = _integer("RESULT_SERVER_PORT", 3168)
     result_server_timeout_seconds: float = _number("RESULT_SERVER_TIMEOUT_SECONDS", 2.0)
