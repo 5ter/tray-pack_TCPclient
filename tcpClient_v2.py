@@ -9,7 +9,11 @@ import signal
 import sys
 
 from tcp_v2_config import BASE_DIR, Settings
+from tcp_v2_db import DatabaseApiClient
+from tcp_v2_job import JobController
+from tcp_v2_printer import SatoPrinter
 from tcp_v2_service import TrayInspectionService
+from tcp_v2_web import OperatorWebServer
 
 
 def configure_logging() -> None:
@@ -25,11 +29,15 @@ def configure_logging() -> None:
 
 def main() -> int:
     configure_logging()
-    service = TrayInspectionService(Settings())
+    settings = Settings()
+    jobs = JobController(settings, DatabaseApiClient(settings), SatoPrinter(settings))
+    web_server = OperatorWebServer(settings.web_host, settings.web_port, settings.web_root, jobs)
+    service = TrayInspectionService(settings, event_handler=jobs.handle_inspection_event)
     signal.signal(signal.SIGINT, service.stop)
     signal.signal(signal.SIGTERM, service.stop)
 
     try:
+        web_server.start()
         service.run()
     except KeyboardInterrupt:
         service.stop()
@@ -37,6 +45,7 @@ def main() -> int:
         logging.exception("Unhandled fatal error")
         return 1
     finally:
+        web_server.stop()
         service.close()
         logging.info("Tray inspection client stopped")
     return 0
