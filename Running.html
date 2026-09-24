@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLC Data Interface - Running</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container-card {
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .btn-override:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(251, 146, 60, 0.4);
+        }
+        .btn-change-product:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(220, 38, 38, 0.4);
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-md bg-white p-8 rounded-xl container-card space-y-8">
+        <h1 class="text-3xl font-bold text-center text-gray-800">Production Control</h1>
+
+        <!-- Status Message Area -->
+        <div id="status-message" class="hidden p-3 rounded-lg text-sm font-medium transition-all duration-300"></div>
+
+        <div class="space-y-6">
+            <h2 class="text-xl font-semibold text-gray-700">Operational Controls</h2>
+            
+            <!-- OVERRIDE Button: Password protected access to change tray count (Command 2) -->
+            <button type="button" onclick="openPasswordModal()"
+                    class="btn-override w-full py-5 bg-orange-500 text-white text-lg font-bold rounded-lg shadow-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition duration-150 ease-in-out">
+                OVERRIDE (Change Tray Count)
+            </button>
+            
+            <!-- CHANGE PRODUCT Button: Opens custom confirmation modal (Sends Command 1, Value 0) -->
+            <button type="button" onclick="openChangeProductModal()"
+                    class="btn-change-product w-full py-5 bg-red-600 text-white text-lg font-bold rounded-lg shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-150 ease-in-out">
+                CHANGE PRODUCT (Restart Setup)
+            </button>
+        </div>
+    </div>
+
+    <!-- 1. Password Modal for Override -->
+    <div id="password-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all duration-300 scale-100">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Authorization Required</h3>
+            <p class="text-gray-600 mb-4">Enter the password to modify the tray count.</p>
+            <input type="password" id="password-input" 
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-orange-500 focus:border-orange-500 mb-4"
+                    placeholder="Enter password" onkeydown="if(event.key === 'Enter') checkPassword()">
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeModal('password-modal')" class="py-2 px-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition duration-150 ease-in-out">
+                    Cancel
+                </button>
+                <button onclick="checkPassword()" class="py-2 px-4 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition duration-150 ease-in-out">
+                    Verify
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Tray Amount Modal for Override Command (Command 2) -->
+    <div id="tray-amount-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all duration-300 scale-100">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Enter New Tray Amount</h3>
+            <p class="text-gray-600 mb-4">Please enter new tray count.</p>
+            <input type="number" id="new-tray-amount-input" required min="0"
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-orange-500 focus:border-orange-500 mb-4"
+                    placeholder="Enter amount (e.g., 5)" onkeydown="if(event.key === 'Enter') sendChangeCommandFromModal()">
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeModal('tray-amount-modal')" class="py-2 px-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition duration-150 ease-in-out">
+                    Cancel
+                </button>
+                <button onclick="sendChangeCommandFromModal()" class="py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-150 ease-in-out">
+                    Send Command
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Custom Confirmation Modal for Change Product (Command 1, Value 0) -->
+    <div id="change-product-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all duration-300 scale-100">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Confirm Product Change & Reset</h3>
+            <p class="text-gray-600 mb-6 font-medium">Are you sure you want to stop the current job? This will send the PLC reset command and <span class="text-red-600 font-bold">reset the setup</span>.</p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeModal('change-product-modal')" class="py-2 px-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition duration-150 ease-in-out">
+                    Cancel
+                </button>
+                <button onclick="executeChangeProduct()" class="py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-150 ease-in-out">
+                    Reset & Change Product
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // The password for the change operation
+        const CORRECT_PASSWORD = "Act123";
+
+        // --- Utility Functions ---
+
+        function showStatus(message, isSuccess) {
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.textContent = message;
+            statusDiv.className = 'p-3 rounded-lg text-sm font-medium transition-all duration-300';
+            
+            if (isSuccess) {
+                statusDiv.classList.add('bg-green-100', 'text-green-800');
+            } else {
+                statusDiv.classList.add('bg-red-100', 'text-red-800');
+            }
+            
+            statusDiv.classList.remove('hidden');
+
+            // Hide the status message after 5 seconds
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 5000);
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        // --- Operational Functions (Change Product - Command 1, Value 0) ---
+
+        /**
+         * CHANGE PRODUCT: Opens the custom confirmation modal.
+         */
+        function openChangeProductModal() {
+            document.getElementById('change-product-modal').classList.remove('hidden');
+        }
+
+        /**
+         * CHANGE PRODUCT: Executes the PLC reset command and then redirects.
+         * Sends commandId: 1 (SET_JOB) and value: 0 (Reset job/qty)
+         */
+        async function executeChangeProduct() {
+            closeModal('change-product-modal');
+            showStatus('Sending job reset command to PLC...', true);
+
+            try {
+                // Endpoint assumed to be handled by server.js to send Command 1 with value 0
+                const response = await fetch('/reset-job', { 
+                    method: 'POST',
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Success: Server confirmed PLC command sent
+                    showStatus(`Job Reset Command Sent. Redirecting to Setup...`, true);
+                    // Wait a moment for the user to see the success message, then redirect
+                    setTimeout(() => {
+                        window.location.href = 'Log_In.html';
+                    }, 1500);
+                } else {
+                    // Server reported an error (e.g., PLC connection down)
+                    showStatus(`PLC Communication Error: Job NOT reset. ${result.message || 'Check server logs.'}`, false);
+                }
+            } catch (error) {
+                // Network or server connection error
+                console.error('CRITICAL ERROR: Failed to reach server for job reset:', error);
+                showStatus('CRITICAL ERROR: Cannot connect to server. Job was NOT reset. Please check network.', false);
+            }
+        }
+        
+        // --- Override Logic (Password Protected - Command 2) ---
+
+        /** Step 1: Opens the password modal. */
+        function openPasswordModal() {
+            document.getElementById('password-input').value = ''; // Clear previous input
+            document.getElementById('password-modal').classList.remove('hidden');
+            document.getElementById('password-input').focus();
+        }
+
+        /** Step 2: Checks the password. */
+        function checkPassword() {
+            const passwordAttempt = document.getElementById('password-input').value;
+
+            if (passwordAttempt === CORRECT_PASSWORD) {
+                closeModal('password-modal');
+                // Success: Go to next step (Tray Amount Input)
+                openTrayAmountModal();
+            } else {
+                document.getElementById('password-input').value = ''; // Clear input on failure
+                showStatus("Incorrect password. Access denied.", false);
+            }
+        }
+
+        /** Step 3: Opens the tray amount input modal. */
+        function openTrayAmountModal() {
+            document.getElementById('new-tray-amount-input').value = ''; // Clear previous input
+            document.getElementById('tray-amount-modal').classList.remove('hidden');
+            document.getElementById('new-tray-amount-input').focus();
+        }
+
+        /** Step 4: Sends the change command (Command 2) from the modal input. */
+        async function sendChangeCommandFromModal() {
+            const newTrayAmount = document.getElementById('new-tray-amount-input').value;
+            const amountAsInt = parseInt(newTrayAmount);
+            
+            closeModal('tray-amount-modal');
+
+            if (isNaN(amountAsInt) || amountAsInt < 0) {
+                showStatus("Validation Error: Invalid tray amount. Must be a non-negative integer.", false);
+                return;
+            }
+
+            try {
+                // This endpoint is for Command 2 (Override Tray Count)
+                const response = await fetch('/change-tray', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trayAmount: amountAsInt }) 
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showStatus(`${result.message}. PLC Status: ${result.plcStatus}`, true);
+                } else {
+                    showStatus(`ERROR (${response.status}): ${result.message} - ${result.plcStatus || 'Check server logs.'}`, false);
+                }
+            } catch (error) {
+                console.error('Error sending change command:', error);
+                showStatus('CRITICAL ERROR: An error occurred while sending the change command.', false);
+            }
+        }
+    </script>
+</body>
+</html>

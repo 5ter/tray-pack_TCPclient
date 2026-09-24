@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Job Login</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Style for required date field in some browsers */
+        input[type="date"]:required:invalid::-webkit-datetime-edit-year-field { color: transparent; }
+        input[type="date"]:required:invalid::-webkit-datetime-edit-month-field { color: transparent; }
+        input[type="date"]:required:invalid::-webkit-datetime-edit-day-field { color: transparent; }
+    </style>
+</head>
+<body class="bg-gray-50 flex items-center justify-center min-h-screen p-4">
+
+    <!-- Main Login Card -->
+    <div class="w-full max-w-lg bg-white shadow-2xl rounded-xl p-8 space-y-8">
+        <header class="text-center">
+            <h1 class="text-3xl font-extrabold text-blue-800">Production Job Setup</h1>
+            <p class="text-gray-500 mt-2">Enter job details to begin production.</p>
+        </header>
+
+        <form id="jobForm" class="space-y-6">
+            <!-- Product Specification / Part Number -->
+            <div>
+                <label for="spec" class="block text-sm font-medium text-gray-700 mb-1">Product Specification / Revision (Spec)</label>
+                <input type="text" id="spec" name="spec" required 
+                       placeholder="e.g., REV-A-2025"
+                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+                       aria-describedby="spec-help">
+                <p id="spec-help" class="mt-1 text-xs text-gray-500">Must match a product definition in the database (e.g., REV-A-2025, REV-B-2025, REV-C-2025).</p>
+            </div>
+
+            <!-- Required Delivery Date -->
+            <div>
+                <label for="deliveryDate" class="block text-sm font-medium text-gray-700 mb-1">Required Delivery Date</label>
+                <input type="date" id="deliveryDate" name="deliveryDate" required 
+                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" id="submitButton"
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-lg text-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-200 ease-in-out disabled:opacity-50">
+                Start Job & Load PLC Data
+            </button>
+        </form>
+        
+        <!-- Registration Button (New) -->
+        <button id="registerButton"
+                class="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-lg shadow-sm text-base font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">
+            Register New Product
+        </button>
+        
+        <!-- Status Message Box -->
+        <div id="statusMessage" class="mt-6 p-4 text-sm rounded-lg border hidden" role="alert">
+            <div class="font-medium" id="statusTitle"></div>
+            <div class="mt-1 text-xs" id="statusDetail"></div>
+        </div>
+
+    </div>
+    
+    <!-- Login Modal for Registration (New) -->
+    <div id="loginModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm space-y-4">
+            <h2 class="text-xl font-bold text-gray-800">Administrator Login</h2>
+            <p class="text-sm text-gray-600">Enter credentials to access product registration.</p>
+            <form id="loginForm" class="space-y-4">
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+                    <input type="text" id="username" name="username" required 
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="password" name="password" required 
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <button type="submit" id="loginButton"
+                        class="w-full py-2 px-4 border border-transparent rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
+                    Log In
+                </button>
+            </form>
+            <button onclick="document.getElementById('loginModal').classList.add('hidden')"
+                    class="w-full text-sm text-gray-500 hover:text-gray-700 mt-2">
+                Cancel
+            </button>
+            <div id="loginStatus" class="text-sm text-center mt-2 hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('jobForm');
+        const submitButton = document.getElementById('submitButton');
+        const registerButton = document.getElementById('registerButton');
+        const loginModal = document.getElementById('loginModal');
+        const loginForm = document.getElementById('loginForm');
+        const loginButton = document.getElementById('loginButton');
+        const loginStatus = document.getElementById('loginStatus');
+        const statusMessage = document.getElementById('statusMessage');
+        const statusTitle = document.getElementById('statusTitle');
+        const statusDetail = document.getElementById('statusDetail');
+
+        // Note: DB_HOST and DB_PORT must match the DB_server.js configuration
+        const DB_URL = 'http://192.168.40.29:3168';
+
+        // Function to display status messages (for main job form)
+        function showStatus(isSuccess, title, detail) {
+            statusMessage.classList.remove('hidden', 'bg-red-100', 'border-red-400', 'text-red-700', 'bg-green-100', 'border-green-400', 'text-green-700');
+            
+            if (isSuccess) {
+                statusMessage.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
+            } else {
+                statusMessage.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+            }
+
+            statusTitle.textContent = title;
+            statusDetail.textContent = detail;
+        }
+
+        // Function to display login status messages (for modal)
+        function showLoginStatus(isSuccess, message) {
+            loginStatus.classList.remove('hidden', 'text-red-600', 'text-green-600');
+            loginStatus.textContent = message;
+
+            if (isSuccess) {
+                loginStatus.classList.add('text-green-600');
+            } else {
+                loginStatus.classList.add('text-red-600');
+            }
+        }
+
+
+        // --- Job Form Submission (Existing Logic) ---
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const deliveryDate = document.getElementById('deliveryDate').value;
+            const spec = document.getElementById('spec').value.trim();
+
+            if (!deliveryDate || !spec) {
+                showStatus(false, 'Validation Error', 'Please fill in both the Product Spec and Delivery Date.');
+                return;
+            }
+
+            // Disable button during submission
+            submitButton.disabled = true;
+            submitButton.textContent = 'Loading... Please Wait';
+
+            try {
+                // Post data to the main server endpoint
+                const response = await fetch('/submit-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deliveryDate, spec })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus(true, 'Job Started Successfully!', 
+                        `Server Message: ${data.message}. PLC Status: ${data.plcStatus}. Redirecting to production screen...`);
+                    
+                    // On success, redirect to the running/production screen
+                    setTimeout(() => {
+                        window.location.href = '/Running.html';
+                    }, 2000); 
+
+                } else {
+                    // Handle non-200 responses
+                    showStatus(false, 'Job Setup Failed', 
+                        `Reason: ${data.message || 'Unknown Error'}. Check Server logs for details. PLC Status: ${data.plcStatus || 'N/A'}`);
+                }
+
+            } catch (error) {
+                console.error('Network error during job submission:', error);
+                showStatus(false, 'Network Error', `Could not connect to the application server. Details: ${error.message}`);
+            } finally {
+                if (!response || !response.ok) {
+                    setTimeout(() => {
+                        submitButton.disabled = false;
+                        submitButton.textContent = 'Start Job & Load PLC Data';
+                    }, 2000);
+                }
+            }
+        });
+
+        // --- Registration Login Logic (New) ---
+        registerButton.addEventListener('click', () => {
+            // Clear any previous status and show modal
+            showLoginStatus(false, '');
+            loginStatus.classList.add('hidden');
+            loginModal.classList.remove('hidden');
+        });
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            loginButton.disabled = true;
+            loginButton.textContent = 'Authenticating...';
+            showLoginStatus(true, 'Checking credentials...');
+            loginStatus.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`${DB_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showLoginStatus(true, 'Login successful! Redirecting...');
+                    // Redirect to the new registration page
+                    setTimeout(() => {
+                        window.location.href = '/Register.html';
+                    }, 1000);
+                } else {
+                    showLoginStatus(false, data.error || 'Authentication failed.');
+                }
+
+            } catch (error) {
+                console.error('Login network error:', error);
+                showLoginStatus(false, `Connection error to DB Server: ${error.message}`);
+            } finally {
+                loginButton.disabled = false;
+                loginButton.textContent = 'Log In';
+            }
+        });
+    </script>
+</body>
+</html>
