@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Start production run</title>
+  <style>
+    :root { font-family: Segoe UI, Arial, sans-serif; color: #162033; background: #f3f6fb; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; }
+    main { width: min(100%, 520px); background: white; border-radius: 18px; padding: 32px; box-shadow: 0 16px 50px #17345c1c; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { color: #637189; line-height: 1.5; }
+    label { display: block; margin: 24px 0 8px; font-weight: 650; }
+    select, input { width: 100%; padding: 13px 14px; border: 1px solid #cbd5e1; border-radius: 9px; font: inherit; background: white; }
+    button, .button { cursor: pointer; border: 0; border-radius: 9px; padding: 13px 16px; font: inherit; font-weight: 650; text-align: center; text-decoration: none; }
+    .primary { width: 100%; margin-top: 18px; color: white; background: #155eef; }
+    .secondary { color: #274060; background: #eaf0f8; }
+    .row { display: flex; gap: 10px; margin-top: 12px; }
+    .row > * { flex: 1; }
+    #message { min-height: 24px; margin-top: 14px; color: #b42318; }
+    .modal { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; background: #101828aa; }
+    .modal[hidden] { display: none; }
+    .dialog { width: min(100%, 400px); border-radius: 14px; padding: 24px; background: white; }
+    .dialog label { margin-top: 14px; }
+    .dialog button { margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Production run</h1>
+    <p>Select the registered part number to begin. Every new start creates a fresh run and resets the on-screen run counts.</p>
+    <form id="startForm">
+      <label for="partNumber">Part number</label>
+      <select id="partNumber" required>
+        <option value="">Loading registered parts…</option>
+      </select>
+      <button id="startButton" class="primary" type="submit">Start production</button>
+    </form>
+    <div class="row">
+      <button id="refreshButton" class="secondary" type="button">Refresh part list</button>
+      <button id="registerButton" class="secondary" type="button">Register new part</button>
+    </div>
+    <div id="message" role="status"></div>
+  </main>
+
+  <section id="loginModal" class="modal" hidden>
+    <form id="loginForm" class="dialog">
+      <h2>Administrator login</h2>
+      <p>Log in to register a new part number.</p>
+      <label for="username">Username</label>
+      <input id="username" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button class="primary" type="submit">Continue to registration</button>
+      <button id="cancelLogin" class="secondary" type="button">Cancel</button>
+      <div id="loginMessage" role="status"></div>
+    </form>
+  </section>
+
+  <script>
+    const DB_API_URL = 'http://192.168.40.29:3168';
+    const partSelect = document.getElementById('partNumber');
+    const message = document.getElementById('message');
+
+    async function loadParts() {
+      partSelect.innerHTML = '<option value="">Loading registered parts…</option>';
+      message.textContent = '';
+      try {
+        const response = await fetch('/api/parts');
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not load parts.');
+        partSelect.innerHTML = '<option value="">Select a part number</option>';
+        for (const part of data.parts) {
+          const option = document.createElement('option');
+          option.value = part.partNumber;
+          option.textContent = part.partNumber;
+          partSelect.appendChild(option);
+        }
+        if (data.parts.length === 0) message.textContent = 'No part numbers are registered yet. Register one to begin.';
+      } catch (error) {
+        partSelect.innerHTML = '<option value="">Part list unavailable</option>';
+        message.textContent = error.message;
+      }
+    }
+
+    document.getElementById('startForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = document.getElementById('startButton');
+      button.disabled = true;
+      message.textContent = 'Starting run…';
+      try {
+        const response = await fetch('/api/run/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ partNumber: partSelect.value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not start production.');
+        window.location.href = '/Production_Run.html';
+      } catch (error) {
+        message.textContent = error.message;
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById('refreshButton').addEventListener('click', loadParts);
+    document.getElementById('registerButton').addEventListener('click', () => {
+      document.getElementById('loginMessage').textContent = '';
+      document.getElementById('loginModal').hidden = false;
+    });
+    document.getElementById('cancelLogin').addEventListener('click', () => {
+      document.getElementById('loginModal').hidden = true;
+    });
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const loginMessage = document.getElementById('loginMessage');
+      try {
+        const response = await fetch(`${DB_API_URL}/login`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Login failed.');
+        window.location.href = '/Register_Part.html';
+      } catch (error) {
+        loginMessage.textContent = error.message;
+      }
+    });
+
+    loadParts();
+  </script>
+</body>
+</html>

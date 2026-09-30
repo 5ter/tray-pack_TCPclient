@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Production run status</title>
+  <style>
+    :root { font-family: Segoe UI, Arial, sans-serif; color: #162033; background: #f3f6fb; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; }
+    main { width: min(100%, 760px); background: white; border-radius: 18px; padding: 32px; box-shadow: 0 16px 50px #17345c1c; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 28px; }
+    #partNumber { margin: 24px 0 4px; font-size: clamp(26px, 6vw, 42px); font-weight: 750; overflow-wrap: anywhere; }
+    .muted { color: #637189; }
+    .counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
+    .card { border-radius: 14px; padding: 24px; text-align: center; background: #f4f7fb; }
+    .card.ok { background: #e9f8ef; color: #067647; }
+    .card.ng { background: #fff0ed; color: #b42318; }
+    .number { display: block; margin-top: 8px; font-size: 42px; font-weight: 750; }
+    a { display: inline-block; margin-top: 24px; padding: 12px 16px; border-radius: 9px; color: white; background: #155eef; text-decoration: none; font-weight: 650; }
+    #status { min-height: 24px; margin-top: 16px; color: #637189; }
+    @media (max-width: 560px) { .counts { grid-template-columns: 1fr; } .card { padding: 16px; } .number { font-size: 34px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Production run</h1>
+      <span id="connection" class="muted">Connecting…</span>
+    </header>
+    <div id="partNumber">Loading run…</div>
+    <div id="runInfo" class="muted"></div>
+    <section class="counts" aria-live="polite">
+      <div class="card ok">OK<span id="okCount" class="number">0</span></div>
+      <div class="card ng">NG<span id="ngCount" class="number">0</span></div>
+      <div class="card">Total inspected<span id="totalCount" class="number">0</span></div>
+    </section>
+    <div id="status" role="status"></div>
+    <a href="/Production_Select.html">Change part / start a new run</a>
+  </main>
+  <script>
+    let polling = false;
+    async function refreshRun() {
+      if (polling) return;
+      polling = true;
+      const connection = document.getElementById('connection');
+      const status = document.getElementById('status');
+      try {
+        const response = await fetch('/api/run-summary', { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to read run status.');
+        if (!data.active) {
+          window.location.href = '/Production_Select.html';
+          return;
+        }
+        document.getElementById('partNumber').textContent = data.part_number;
+        document.getElementById('runInfo').textContent = `Run ${data.run_id} · Started ${new Date(data.started_at_utc).toLocaleString()}`;
+        document.getElementById('okCount').textContent = data.okCount;
+        document.getElementById('ngCount').textContent = data.ngCount;
+        document.getElementById('totalCount').textContent = data.totalCount;
+        connection.textContent = 'Connected';
+        status.textContent = 'Counts refresh automatically from the server.';
+      } catch (error) {
+        connection.textContent = 'Server unavailable';
+        status.textContent = `${error.message} Counts will refresh when the server responds.`;
+      } finally {
+        polling = false;
+      }
+    }
+    refreshRun();
+    window.setInterval(refreshRun, 1500);
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-"""Small standard-library web server for the legacy operator HTML and JSON API."""
+"""Small standard-library web server for the operator pages and local API."""
 
 from __future__ import annotations
 
@@ -12,20 +12,25 @@ from threading import Thread
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from tcp_v2_job import JobController, JobError
+from tcp_v2_db import DatabaseApiClient, DatabaseApiError
+from tcp_v2_run import ProductionRunController, RunError
 
 
 def _json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload).encode("utf-8")
 
 
-def _handler_class(job_controller: JobController, static_root: Path) -> type[BaseHTTPRequestHandler]:
-    """Create a request handler that closes over the active job controller."""
+def _handler_class(
+    database: DatabaseApiClient,
+    run_controller: ProductionRunController,
+    static_root: Path,
+) -> type[BaseHTTPRequestHandler]:
+    """Create a request handler for the operator UI and current production run."""
 
     static_root = static_root.resolve()
 
     class TrayWebHandler(BaseHTTPRequestHandler):
-        server_version = "TrayPackingPython/2"
+        server_version = "TrayPackingPython/3"
 
         def log_message(self, format: str, *args: object) -> None:
             logging.info("HTTP %s - %s", self.address_string(), format % args)
@@ -71,67 +76,77 @@ def _handler_class(job_controller: JobController, static_root: Path) -> type[Bas
             path = urlparse(self.path).path
             if path == "/":
                 self.send_response(HTTPStatus.FOUND)
-                self.send_header("Location", "/Log_In.html")
+                self.send_header("Location", "/Production_Select.html")
+                self.end_headers()
+            elif path == "/Log_In.html":
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", "/Production_Select.html")
+                self.end_headers()
+            elif path == "/Register.html":
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", "/Register_Part.html")
+                self.end_headers()
+            elif path == "/Running.html":
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", "/Production_Run.html")
                 self.end_headers()
             elif path == "/health":
-                self._send_json(HTTPStatus.OK, {"ok": True, "job": job_controller.summary()})
-            elif path == "/job":
-                self._send_json(HTTPStatus.OK, job_controller.summary())
+                self._send_json(HTTPStatus.OK, {"ok": True})
+            elif path == "/api/parts":
+                try:
+                    self._send_json(HTTPStatus.OK, {"parts": database.list_parts()})
+                except DatabaseApiError as error:
+                    self._send_json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
+            elif path == "/api/run-summary":
+                try:
+                    self._send_json(HTTPStatus.OK, run_controller.summary())
+                except DatabaseApiError as error:
+                    self._send_json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
             else:
                 self._serve_static_file(path)
 
         def do_POST(self) -> None:  # noqa: N802 - required BaseHTTPRequestHandler name
             path = urlparse(self.path).path
             try:
-                if path == "/submit-data":
+                if path == "/api/run/start":
                     data = self._read_json()
-                    job = job_controller.start(
-                        str(data.get("deliveryDate") or ""),
-                        str(data.get("spec") or ""),
-                    )
+                    run = run_controller.start_run(str(data.get("partNumber") or ""))
                     self._send_json(
-                        HTTPStatus.OK,
+                        HTTPStatus.CREATED,
                         {
-                            "message": "Job started. The PC will now poll M7/M8; no job data is sent to the PLC.",
-                            "plcStatus": "PLC polling is active; M7=OK and M8=NG.",
-                            "job": job,
-                        },
-                    )
-                elif path == "/reset-job":
-                    job_controller.reset()
-                    self._send_json(
-                        HTTPStatus.OK,
-                        {
-                            "message": "PC job reset. The PLC camera logic is unchanged.",
-                            "plcStatus": "No reset command is sent to the PLC in version 2.",
-                        },
-                    )
-                elif path == "/change-tray":
-                    self._send_json(
-                        HTTPStatus.CONFLICT,
-                        {
-                            "message": "Tray-count override is not used in version 2.",
-                            "plcStatus": "The PC waits for final M7/M8 inspection latches; it does not write PLC tray counters.",
+                            "message": "Production run started. PLC M7/M8 results will be recorded with this part number.",
+                            "run": run,
                         },
                     )
                 else:
                     self._send_json(HTTPStatus.NOT_FOUND, {"error": "Unknown endpoint"})
-            except (ValueError, JobError) as error:
-                self._send_json(HTTPStatus.BAD_REQUEST, {"message": str(error), "plcStatus": "No PLC data written."})
+            except (ValueError, RunError) as error:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            except DatabaseApiError as error:
+                self._send_json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
             except Exception as error:  # The client must receive JSON, not an HTML traceback.
                 logging.exception("Unhandled API error for %s", path)
-                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"message": str(error), "plcStatus": "Check PC service log."})
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(error)})
 
     return TrayWebHandler
 
 
 class OperatorWebServer:
-    """Host the unchanged HTML pages and the Python compatibility API."""
+    """Host the operator HTML pages and same-origin run-selection API."""
 
-    def __init__(self, host: str, port: int, static_root: Path, jobs: JobController) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        static_root: Path,
+        database: DatabaseApiClient,
+        run_controller: ProductionRunController,
+    ) -> None:
         if not static_root.is_dir():
             raise RuntimeError(f"WEB_ROOT does not exist or is not a directory: {static_root}")
-        self._server = ThreadingHTTPServer((host, port), _handler_class(jobs, static_root))
+        self._server = ThreadingHTTPServer(
+            (host, port), _handler_class(database, run_controller, static_root)
+        )
         self._thread = Thread(target=self._server.serve_forever, name="operator-web", daemon=True)
         self._started = False
 
@@ -139,7 +154,7 @@ class OperatorWebServer:
         self._thread.start()
         self._started = True
         host, port = self._server.server_address[:2]
-        logging.info("Operator web/API server listening at http://%s:%s/Log_In.html", host, port)
+        logging.info("Operator web/API server listening at http://%s:%s/", host, port)
 
     def stop(self) -> None:
         if self._started:

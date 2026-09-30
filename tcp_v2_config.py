@@ -33,15 +33,6 @@ def _number(name: str, default: float) -> float:
     return value
 
 
-def _boolean(name: str, default: bool) -> bool:
-    value = _text(name, str(default)).lower()
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"{name} must be true or false")
-
-
 @dataclass(frozen=True)
 class Settings:
     """Network and polling settings used by the small modules."""
@@ -58,17 +49,10 @@ class Settings:
     machine_id: str = _text("MACHINE_ID", "TRAY-PACK-01")
     db_base_url: str = _text("DB_BASE_URL", "http://192.168.40.29:3168")
     db_timeout_seconds: float = _number("DB_TIMEOUT_SECONDS", 5.0)
-    printer_ip: str = _text("PRINTER_IP", "192.168.4.97")
-    printer_port: int = _integer("PRINTER_PORT", 9100)
-    printer_timeout_seconds: float = _number("PRINTER_TIMEOUT_SECONDS", 5.0)
-    # Keep physical label output disabled until the migrated job flow is verified.
-    enable_printing: bool = _boolean("ENABLE_PRINTING", False)
-    job_state_path: Path = Path(_text("JOB_STATE_PATH", str(BASE_DIR / "active_job.json")))
+    result_outbox_path: Path = Path(_text("RESULT_OUTBOX_PATH", str(BASE_DIR / "result_outbox.sqlite3")))
+    result_batch_interval_seconds: float = _number("RESULT_BATCH_INTERVAL_SECONDS", 10.0)
+    result_batch_size: int = _integer("RESULT_BATCH_SIZE", 100)
+    active_run_path: Path = Path(_text("ACTIVE_RUN_PATH", str(BASE_DIR / "active_run.json")))
     web_host: str = _text("WEB_HOST", "127.0.0.1")
     web_port: int = _integer("WEB_PORT", 3000)
-    web_root: Path = Path(_text("WEB_ROOT", str(BASE_DIR.parent / "TrayPack-Modbus")))
-    result_server_ip: str = _text("RESULT_SERVER_IP", "192.168.40.29")
-    result_server_port: int = _integer("RESULT_SERVER_PORT", 3168)
-    result_server_timeout_seconds: float = _number("RESULT_SERVER_TIMEOUT_SECONDS", 2.0)
-    forward_results: bool = _boolean("FORWARD_RESULTS", False)
-    outbox_path: Path = Path(_text("OUTBOX_PATH", str(BASE_DIR / "tray_events.sqlite3")))
+    web_root: Path = BASE_DIR

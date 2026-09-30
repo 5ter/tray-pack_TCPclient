@@ -1,6 +1,6 @@
-"""Start the tray-inspection client version 2.
+"""Start the simplified tray-inspection client.
 
-Read README_tcpClient_v2.md first. This file intentionally contains only the
+Read README_production_v3.md first. This file intentionally contains only the
 startup flow; each technical responsibility lives in a small companion module.
 """
 
@@ -10,9 +10,10 @@ import sys
 
 from tcp_v2_config import BASE_DIR, Settings
 from tcp_v2_db import DatabaseApiClient
-from tcp_v2_job import JobController
-from tcp_v2_printer import SatoPrinter
+from tcp_v2_outbox import LocalResultOutbox
+from tcp_v2_run import ProductionRunController
 from tcp_v2_service import TrayInspectionService
+from tcp_v2_sender import ResultSubmitter
 from tcp_v2_web import OperatorWebServer
 
 
@@ -30,9 +31,17 @@ def configure_logging() -> None:
 def main() -> int:
     configure_logging()
     settings = Settings()
-    jobs = JobController(settings, DatabaseApiClient(settings), SatoPrinter(settings))
-    web_server = OperatorWebServer(settings.web_host, settings.web_port, settings.web_root, jobs)
-    service = TrayInspectionService(settings, event_handler=jobs.handle_inspection_event)
+    database = DatabaseApiClient(settings)
+    outbox = LocalResultOutbox(settings.result_outbox_path)
+    submitter = ResultSubmitter(
+        database,
+        outbox,
+        flush_interval_seconds=settings.result_batch_interval_seconds,
+        batch_size=settings.result_batch_size,
+    )
+    runs = ProductionRunController(settings, database, submitter)
+    web_server = OperatorWebServer(settings.web_host, settings.web_port, settings.web_root, database, runs)
+    service = TrayInspectionService(settings, event_handler=runs.handle_inspection_event)
     signal.signal(signal.SIGINT, service.stop)
     signal.signal(signal.SIGTERM, service.stop)
 
@@ -47,6 +56,8 @@ def main() -> int:
     finally:
         web_server.stop()
         service.close()
+        submitter.close()
+        outbox.close()
         logging.info("Tray inspection client stopped")
     return 0
 

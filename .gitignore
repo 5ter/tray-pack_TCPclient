@@ -8,3 +8,8 @@ tcp_client_v2.log
 *.sqlite3
 __pycache__/
 tray_events.*
+active_run.json
+
+# add github action workflow files to the .gitignore file temporarily
+.github/workflows/*.yml
+DEPLOYMENT_NSSM.md

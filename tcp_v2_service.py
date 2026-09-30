@@ -1,4 +1,4 @@
-"""Main flow: PLC latch change -> event -> local queue -> optional forwarding."""
+"""Main flow: detect one M7/M8 edge and associate it with the current run."""
 
 import logging
 import time
@@ -7,9 +7,8 @@ from collections.abc import Callable
 from pymodbus.exceptions import ConnectionException, ModbusException
 
 from tcp_v2_config import Settings
-from tcp_v2_events import EventOutbox, InspectionEvent
+from tcp_v2_events import InspectionEvent
 from tcp_v2_plc import LatchState, PlcLatchReader
-from tcp_v2_sender import ResultForwarder
 
 
 class TrayInspectionService:
@@ -24,36 +23,25 @@ class TrayInspectionService:
             raise ValueError("OK_COIL_ADDRESS and NG_COIL_ADDRESS must be different")
         self._settings = settings
         self._plc = PlcLatchReader(settings)
-        self._outbox = EventOutbox(settings.outbox_path)
-        self._forwarder = ResultForwarder(settings)
         self._previous: LatchState | None = None
         self._running = True
-        self._last_forward_attempt = 0.0
         self._event_handler = event_handler
 
     def stop(self, *_: object) -> None:
         self._running = False
 
     def close(self) -> None:
-        self._forwarder.close()
-        self._outbox.close()
         self._plc.close()
 
     def _record(self, status: str) -> None:
         source_coil = self._settings.ok_coil_address if status == "OK" else self._settings.ng_coil_address
-        event = InspectionEvent.create(self._settings.machine_id, status, source_coil)
-        self._outbox.add(event)
-        logging.info("NEW %s event id=%s from M%s", status, event.event_id, source_coil)
-        self.handle_event(event)
+        event = InspectionEvent.create(self._settings.machine_id, status)
+        logging.info("NEW %s event from M%s", status, source_coil)
+        self._handle_event(event)
 
-    def handle_event(self, event: InspectionEvent) -> None:
-        """Future phase: perform PC-side Box-ID, print, and database work here.
-
-        For now this only logs. It is intentionally safe: this version cannot
-        print a label or alter a Box ID until the product-data contract is added.
-        """
+    def _handle_event(self, event: InspectionEvent) -> None:
         if self._event_handler is None:
-            logging.info("Event ready for future PC pipeline: %s", event.status)
+            logging.warning("No event handler configured; result was not submitted")
             return
         self._event_handler(event)
 
@@ -74,19 +62,6 @@ class TrayInspectionService:
 
         self._previous = current
 
-    def _forward_pending_events(self) -> None:
-        if not self._settings.forward_results:
-            return
-        for event in self._outbox.pending():
-            try:
-                self._forwarder.send(event)
-                self._outbox.mark_delivered(event.event_id)
-                logging.info("Forwarded event id=%s", event.event_id)
-            except OSError as error:
-                logging.warning("Result server unavailable; event remains queued: %s", error)
-                self._forwarder.close()
-                return
-
     def run(self) -> None:
         logging.info(
             "Polling PLC %s:%s: M%s=OK, M%s=NG",
@@ -104,7 +79,4 @@ class TrayInspectionService:
                 self._plc.close()
                 time.sleep(self._settings.reconnect_delay_seconds)
 
-            if time.monotonic() - self._last_forward_attempt >= 0.5:
-                self._forward_pending_events()
-                self._last_forward_attempt = time.monotonic()
             time.sleep(self._settings.poll_interval_seconds)

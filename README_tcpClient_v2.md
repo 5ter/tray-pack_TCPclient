@@ -1,3 +1,11 @@
+# Archived V2 documentation
+
+This document describes the previous print / Box-ID workflow and is retained
+for reference. The current production flow is documented in
+`README_production_v3.md`.
+
+---
+
 # tcpClient_v2: simple file map and first PLC test
 
 ## Start here: a read-only PLC test
