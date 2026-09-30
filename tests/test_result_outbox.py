@@ -1,6 +1,7 @@
 """Offline tests for durable result queuing and retry acknowledgement."""
 
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 
@@ -17,6 +18,7 @@ def inspection_result(event_id: str) -> dict[str, str]:
         "status": "OK",
         "timestampUtc": "2026-09-30T01:02:03.000000+00:00",
         "machineId": "TRAY-PACK-01",
+        "operatorName": "Operator A",
     }
 
 
@@ -36,6 +38,39 @@ class FakeDatabaseApi:
 
 
 class LocalResultOutboxTests(unittest.TestCase):
+    def test_existing_outbox_is_migrated_without_losing_pending_results(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result_outbox.sqlite3"
+            connection = sqlite3.connect(path)
+            connection.execute(
+                """
+                CREATE TABLE pending_results (
+                    event_id TEXT PRIMARY KEY,
+                    part_number TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    timestamp_utc TEXT NOT NULL,
+                    machine_id TEXT NOT NULL
+                )
+                """
+            )
+            result = inspection_result("6f1d2dc6-581e-41a6-91b4-9edaf931ef6b")
+            connection.execute(
+                """INSERT INTO pending_results
+                   (event_id, part_number, run_id, status, timestamp_utc, machine_id)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                tuple(result[key] for key in ("eventId", "partNumber", "runId", "status", "timestampUtc", "machineId")),
+            )
+            connection.commit()
+            connection.close()
+
+            outbox = LocalResultOutbox(path)
+            try:
+                expected = {**result, "operatorName": "UNKNOWN"}
+                self.assertEqual(outbox.pending(), [expected])
+            finally:
+                outbox.close()
+
     def test_result_survives_reopening_outbox(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result_outbox.sqlite3"

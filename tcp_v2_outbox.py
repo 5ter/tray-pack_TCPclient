@@ -24,10 +24,19 @@ class LocalResultOutbox:
                 run_id TEXT NOT NULL,
                 status TEXT NOT NULL CHECK (status IN ('OK', 'NG')),
                 timestamp_utc TEXT NOT NULL,
-                machine_id TEXT NOT NULL
+                machine_id TEXT NOT NULL,
+                operator_name TEXT NOT NULL DEFAULT 'UNKNOWN'
             )
             """
         )
+        columns = {
+            row[1]
+            for row in self._connection.execute("PRAGMA table_info(pending_results)").fetchall()
+        }
+        if "operator_name" not in columns:
+            self._connection.execute(
+                "ALTER TABLE pending_results ADD COLUMN operator_name TEXT NOT NULL DEFAULT 'UNKNOWN'"
+            )
         self._connection.commit()
 
     def add(self, result: dict[str, str]) -> None:
@@ -35,12 +44,13 @@ class LocalResultOutbox:
             self._connection.execute(
                 """
                 INSERT OR IGNORE INTO pending_results (
-                    event_id, part_number, run_id, status, timestamp_utc, machine_id
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    event_id, part_number, run_id, status, timestamp_utc, machine_id, operator_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result["eventId"], result["partNumber"], result["runId"],
                     result["status"], result["timestampUtc"], result["machineId"],
+                    result.get("operatorName") or "UNKNOWN",
                 ),
             )
             self._connection.commit()
@@ -49,7 +59,7 @@ class LocalResultOutbox:
         with self._lock:
             rows = self._connection.execute(
                 """
-                SELECT event_id, part_number, run_id, status, timestamp_utc, machine_id
+                SELECT event_id, part_number, run_id, status, timestamp_utc, machine_id, operator_name
                 FROM pending_results
                 ORDER BY rowid
                 LIMIT ?
@@ -60,6 +70,7 @@ class LocalResultOutbox:
             {
                 "eventId": row[0], "partNumber": row[1], "runId": row[2],
                 "status": row[3], "timestampUtc": row[4], "machineId": row[5],
+                "operatorName": row[6],
             }
             for row in rows
         ]

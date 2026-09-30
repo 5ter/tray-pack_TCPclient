@@ -15,6 +15,18 @@ class DatabaseApiError(RuntimeError):
     """The existing database server did not complete an expected request."""
 
 
+def _http_error_message(error: HTTPError, body: str) -> str:
+    try:
+        details = json.loads(body)
+    except json.JSONDecodeError:
+        return f"Server returned a non-JSON error response (HTTP {error.code})."
+    if isinstance(details, dict):
+        message = details.get("error") or details.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return f"Server returned an unexpected error response (HTTP {error.code})."
+
+
 class DatabaseApiClient:
     """Call the part-number and inspection-result HTTP API."""
 
@@ -34,11 +46,7 @@ class DatabaseApiClient:
                 body = response.read().decode("utf-8")
         except HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")
-            try:
-                details = json.loads(body)
-                message = details.get("error") or details.get("message") or body
-            except json.JSONDecodeError:
-                message = body or error.reason
+            message = _http_error_message(error, body)
             raise DatabaseApiError(f"{path} returned HTTP {error.code}: {message}") from error
         except URLError as error:
             raise DatabaseApiError(f"Cannot reach database API at {self._base_url}: {error.reason}") from error
@@ -58,11 +66,7 @@ class DatabaseApiClient:
                 body = response.read().decode("utf-8")
         except HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")
-            try:
-                details = json.loads(body)
-                message = details.get("error") or details.get("message") or body
-            except json.JSONDecodeError:
-                message = body or error.reason
+            message = _http_error_message(error, body)
             raise DatabaseApiError(f"{path} returned HTTP {error.code}: {message}") from error
         except URLError as error:
             raise DatabaseApiError(f"Cannot reach database API at {self._base_url}: {error.reason}") from error

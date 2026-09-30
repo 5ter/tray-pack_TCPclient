@@ -2,15 +2,15 @@
 
 ## Operator flow
 
-1. The operator opens `Production_Select.html` and chooses a registered part number.
-2. Starting production creates a new run ID. Starting again, even with the same part, starts a separate run with fresh counts.
+1. The operator opens `Production_Select.html`, enters their name or ID, and chooses a registered part number.
+2. Starting production creates a new run ID and saves the self-reported operator name/ID with the active run. Starting again, even with the same part, starts a separate run with fresh counts.
 3. The PC polls PLC M7 (OK) and M8 (NG). Each OFF-to-ON transition creates an event with a unique ID and is associated with the selected part and run ID.
 4. The PC commits the result to its local SQLite outbox (`result_outbox.sqlite3`) before returning to PLC polling.
 5. Every 10 seconds, the PC sends up to 100 queued results in one request to `http://192.168.40.29:3168/inspection-results/batch`.
-6. The Node API stores the part, result, UTC timestamp, machine ID, run ID, and event ID in MySQL. It acknowledges the event IDs; only acknowledged rows are removed from the PC outbox.
+6. The Node API stores the part, result, UTC timestamp, machine ID, operator name/ID, run ID, and event ID in MySQL. It acknowledges the event IDs; only acknowledged rows are removed from the PC outbox.
 7. `Production_Run.html` refreshes OK, NG, and total counts for the current run from the server.
 
-The active part and run ID are stored in `active_run.json` on the PC and survive a client-service restart. There is no Stop/End control: selecting a part and starting again replaces the active run. A PLC event received before a run is selected is logged and ignored.
+The active part, operator name/ID, and run ID are stored in `active_run.json` on the PC and survive a client-service restart. The operator value is self-reported and is not authenticated; it identifies who was entered for that run. There is no Stop/End control: selecting a part and starting again replaces the active run. A PLC event received before a run is selected is logged and ignored.
 
 ## Result delivery behavior
 
@@ -32,7 +32,26 @@ The Python service still listens on `127.0.0.1:3000` by default and serves the s
 - `POST /api/run/start` validates a part number and creates the new local run context.
 - `GET /api/run-summary` reads counts for the active run from the DB API.
 
-`Log_In.html`, `Register.html`, and `Running.html` redirect to the new screens. Registration keeps the existing administrator login and registers only a unique part number.
+`/run-summary` is a read-only query: the Node API counts the OK/NG rows already stored for the active run in MySQL. The running page polls it every 5 seconds so counts update without a manual refresh. Results are uploaded in batches every 10 seconds, so the count can naturally lag the PLC by up to roughly one upload interval plus the next page refresh. The polling does not create or submit inspection results.
+
+The legacy URLs `/Log_In.html`, `/Register.html`, and `/Running.html` are still redirected to the new screens by the Python web server. Registration keeps the existing administrator login and registers only a unique part number.
+
+## Repository layout
+
+- The active Python service modules, `tcpClient_v2.py`, and current UI pages stay in the project root because NSSM and the deployment workflow expect those paths.
+- `tests/` contains offline unit tests. `tests/manual/` contains diagnostics that are run only when needed.
+- `obsolete/` holds the superseded V2 guide, old entrypoints, and prior UI pages. They are archived, not used by the current service. The Python web server still handles the old page URLs as redirects.
+- Local state and runtime files such as `active_run.json`, `result_outbox.sqlite3`, and logs remain outside those folders so deployment does not disturb them.
+
+## Tests
+
+From the project root, run the offline unit tests with:
+
+```powershell
+python -B -m unittest discover -s tests -t .
+```
+
+Manual diagnostics are separate from unit-test discovery. `python -m tests.manual.read_plc_latches` reads the live PLC M7/M8 latches without writing; run it only when you intentionally want to check the machine signal. `python -m tests.manual.check_pymodbus_install` checks the installed PyModbus imports and does not connect to a device.
 
 ## MySQL API and schema
 
@@ -50,6 +69,7 @@ The Node API is in the sibling `tray-pack_server` repository. The new endpoints 
       "status": "OK",
       "timestampUtc": "2026-09-30T01:02:03.000Z",
       "machineId": "TRAY-PACK-01",
+      "operatorName": "Operator A",
       "runId": "7c90ad28-8fba-4dc4-97f7-51c98029efad"
     }]
   }
@@ -60,11 +80,30 @@ The Node API is in the sibling `tray-pack_server` repository. The new endpoints 
 - `GET /run-summary?runId=...&partNumber=...`
 - Existing `POST /login` remains in use.
 
-Apply `tray-pack_server/migrations/001_production_tables.sql` and then `tray-pack_server/migrations/002_inspection_event_ids.sql` to the existing `tray` MySQL database before using the new screens with the queued sender. Migration 001 creates `registered_parts` and `inspection_results`, then copies distinct existing part numbers from `label_print_data` into the new part list. Migration 002 adds the unique event ID used for retry deduplication. Run each migration once, in order. Existing `label_print_data` and `user_log_in` rows and legacy API routes are not deleted. These migration files do not themselves connect to or modify the live database; run them manually on the database server after taking a backup.
+Apply `tray-pack_server/migrations/001_production_tables.sql`, `002_inspection_event_ids.sql`, and `003_inspection_operator.sql` to the existing `tray` MySQL database before using the new screens with the queued sender. Run them once in order. If 001 and 002 have already been applied, back up the database and apply only 003. Migration 001 creates `registered_parts` and `inspection_results`, then copies distinct existing part numbers from `label_print_data` into the new part list. Migration 002 adds the unique event ID used for retry deduplication. Migration 003 adds `operator_name`; pre-existing results receive `UNKNOWN`. Existing `label_print_data` and `user_log_in` rows and legacy API routes are not deleted. These migration files do not themselves connect to or modify the live database; run them manually on the database server after taking a backup.
 
 The DB API must be deployed and restarted separately from the PC NSSM service. The new Node routes were added alongside the old printing-era routes to keep the existing server available during transition; the new client does not call the old routes. The NSSM GitHub Action in `.github/workflows/deploy-nssm.yml` only deploys the PC client.
 
 Recommended rollout order: back up the MySQL `tray` database, apply the SQL migration on the DB server, deploy/restart the Node API from `tray-pack_server`, then push the PC client changes to `main` so its NSSM deployment runs.
+
+## Starting the new production tables fresh
+
+This permanently deletes inspection history and registered parts from the two new tables. Stop production and stop the PC NSSM service first. Let the local outbox deliver its pending events before resetting the server tables; otherwise queued events can be rejected after their part numbers are deleted. You can check the default local outbox on the PC with:
+
+```powershell
+python -c "import sqlite3; c=sqlite3.connect('result_outbox.sqlite3'); print(c.execute('SELECT COUNT(*) FROM pending_results').fetchone()[0]); c.close()"
+```
+
+If `RESULT_OUTBOX_PATH` is configured, run that command against the configured SQLite file instead. Make a database backup, then in MySQL Workbench or the MySQL command line select the `tray` database and run:
+
+```sql
+START TRANSACTION;
+DELETE FROM inspection_results;
+DELETE FROM registered_parts;
+COMMIT;
+```
+
+Delete child rows first because `inspection_results` references `registered_parts`. Register the required part numbers again before starting production. This does not clear or modify the legacy `label_print_data` or `user_log_in` tables. Do not clear the local outbox as part of a normal reset; if it is non-empty, allow delivery to finish before running the SQL above.
 
 ## PLC behavior
 

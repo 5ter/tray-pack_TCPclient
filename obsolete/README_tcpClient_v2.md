@@ -2,7 +2,7 @@
 
 This document describes the previous print / Box-ID workflow and is retained
 for reference. The current production flow is documented in
-`README_production_v3.md`.
+`../README_production_v3.md`.
 
 ---
 
@@ -10,15 +10,16 @@ for reference. The current production flow is documented in
 
 ## Start here: a read-only PLC test
 
-Use `test_plc_latches.py` before starting the full service. It is read-only:
+Use `../tests/manual/read_plc_latches.py` only when you intentionally want to
+check live PLC latches. It is read-only:
 it only reads PLC `M7` (OK) and `M8` (NG). It does not write a PLC coil or
 register, print, create Box IDs, create a database, or send to the result
 server.
 
-From PowerShell in this folder:
+From PowerShell at the project root:
 
 ```powershell
-python .\test_plc_latches.py
+python .\tests\manual\read_plc_latches.py
 ```
 
 Expected first output when the PLC connection and Modbus addresses are correct:
@@ -70,13 +71,13 @@ That avoids treating an old result still latched in the PLC as a new tray.
 
 | File | Purpose |
 |---|---|
-| `test_plc_latches.py` | Read-only M7/M8 test. Run this first. |
+| `../tests/manual/read_plc_latches.py` | Read-only M7/M8 test. Run only when needed. |
 | `tcpClient_v2.py` | Small launcher for the full service. |
 | `tcp_v2_config.py` | PLC addresses, poll interval, machine ID, and server settings. |
 | `tcp_v2_plc.py` | The only code that calls Modbus and reads M7/M8. |
 | `tcp_v2_service.py` | Flow: latch change -> inspection event -> local queue -> optional forwarding. |
 | `tcp_v2_events.py` | Defines an event and keeps it in a local SQLite queue. |
-| `tcp_v2_sender.py` | Sends queued JSON to existing `server.py`, if enabled. |
+| `tcp_v2_sender.py` | Previous sender from the archived V2 flow. |
 | `tcp_v2_db.py` | Calls the existing `/get-project-data` and `/update-box-id` database API. |
 | `tcp_v2_job.py` | Holds the active PC job and generates Box IDs after final OK events. |
 | `tcp_v2_printer.py` | Python conversion of the existing SATO SBPL label transmission. |
@@ -207,7 +208,7 @@ PowerShell example for a different PLC address:
 $env:PLC_IP = '192.168.6.6'
 $env:OK_COIL_ADDRESS = '7'
 $env:NG_COIL_ADDRESS = '8'
-python .\test_plc_latches.py
+python .\tests\manual\read_plc_latches.py
 ```
 
 Do not change coil numbers unless the read-only test proves the mapping wrong.

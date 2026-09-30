@@ -110,11 +110,14 @@ def _handler_class(
             try:
                 if path == "/api/run/start":
                     data = self._read_json()
-                    run = run_controller.start_run(str(data.get("partNumber") or ""))
+                    run = run_controller.start_run(
+                        str(data.get("partNumber") or ""),
+                        str(data.get("operatorName") or ""),
+                    )
                     self._send_json(
                         HTTPStatus.CREATED,
                         {
-                            "message": "Production run started. PLC M7/M8 results will be recorded with this part number.",
+                            "message": "Production run started. PLC M7/M8 results will be recorded with this part number and operator.",
                             "run": run,
                         },
                     )

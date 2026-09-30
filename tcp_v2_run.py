@@ -24,6 +24,7 @@ class RunError(RuntimeError):
 @dataclass(frozen=True)
 class ActiveRun:
     part_number: str
+    operator_name: str
     run_id: str
     started_at_utc: str
 
@@ -42,6 +43,7 @@ class RunStateStore:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             return ActiveRun(
                 part_number=str(data["part_number"]),
+                operator_name=str(data.get("operator_name") or "UNKNOWN"),
                 run_id=str(data["run_id"]),
                 started_at_utc=str(data["started_at_utc"]),
             )
@@ -73,23 +75,27 @@ class ProductionRunController:
         self._lock = RLock()
         self._active_run = self._store.load()
 
-    def start_run(self, part_number: str) -> dict[str, Any]:
+    def start_run(self, part_number: str, operator_name: str) -> dict[str, Any]:
         cleaned_part_number = part_number.strip()
         if not cleaned_part_number:
             raise RunError("partNumber is required")
+        cleaned_operator_name = operator_name.strip()
+        if not cleaned_operator_name or len(cleaned_operator_name) > 100:
+            raise RunError("operatorName is required and must be 100 characters or fewer")
         parts = self._database.list_parts()
         if not any(part["partNumber"] == cleaned_part_number for part in parts):
             raise RunError(f"Part number '{cleaned_part_number}' is not registered")
 
         run = ActiveRun(
             part_number=cleaned_part_number,
+            operator_name=cleaned_operator_name,
             run_id=str(uuid.uuid4()),
             started_at_utc=datetime.now(timezone.utc).isoformat(),
         )
         with self._lock:
             self._store.save(run)
             self._active_run = run
-        logging.info("Started production run=%s for part=%s", run.run_id, run.part_number)
+        logging.info("Started production run=%s for part=%s operator=%s", run.run_id, run.part_number, run.operator_name)
         return {"active": True, **asdict(run)}
 
     def summary(self) -> dict[str, Any]:
@@ -111,6 +117,7 @@ class ProductionRunController:
         payload = {
             "eventId": event.event_id,
             "partNumber": run.part_number,
+            "operatorName": run.operator_name,
             "runId": run.run_id,
             "status": event.status,
             "timestampUtc": event.occurred_at_utc,

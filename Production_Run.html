@@ -18,7 +18,7 @@
     .card.ok { background: #e9f8ef; color: #067647; }
     .card.ng { background: #fff0ed; color: #b42318; }
     .number { display: block; margin-top: 8px; font-size: 42px; font-weight: 750; }
-    a { display: inline-block; margin-top: 24px; padding: 12px 16px; border-radius: 9px; color: white; background: #155eef; text-decoration: none; font-weight: 650; }
+    a { display: flex; align-items: center; justify-content: center; width: max-content; margin: 24px auto 0; padding: 12px 16px; border-radius: 9px; color: white; background: #155eef; text-decoration: none; font-weight: 650; text-align: center; }
     #status { min-height: 24px; margin-top: 16px; color: #637189; }
     @media (max-width: 560px) { .counts { grid-template-columns: 1fr; } .card { padding: 16px; } .number { font-size: 34px; } }
   </style>
@@ -30,6 +30,7 @@
       <span id="connection" class="muted">Connecting…</span>
     </header>
     <div id="partNumber">Loading run…</div>
+    <div id="operatorInfo" class="muted"></div>
     <div id="runInfo" class="muted"></div>
     <section class="counts" aria-live="polite">
       <div class="card ok">OK<span id="okCount" class="number">0</span></div>
@@ -39,6 +40,7 @@
     <div id="status" role="status"></div>
     <a href="/Production_Select.html">Change part / start a new run</a>
   </main>
+  <script src="/ui_helpers.js"></script>
   <script>
     let polling = false;
     async function refreshRun() {
@@ -47,29 +49,28 @@
       const connection = document.getElementById('connection');
       const status = document.getElementById('status');
       try {
-        const response = await fetch('/api/run-summary', { cache: 'no-store' });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Unable to read run status.');
+        const data = await fetchJson('/api/run-summary', { cache: 'no-store' });
         if (!data.active) {
           window.location.href = '/Production_Select.html';
           return;
         }
         document.getElementById('partNumber').textContent = data.part_number;
+        document.getElementById('operatorInfo').textContent = `Operator: ${data.operator_name || 'Unknown'}`;
         document.getElementById('runInfo').textContent = `Run ${data.run_id} · Started ${new Date(data.started_at_utc).toLocaleString()}`;
         document.getElementById('okCount').textContent = data.okCount;
         document.getElementById('ngCount').textContent = data.ngCount;
         document.getElementById('totalCount').textContent = data.totalCount;
         connection.textContent = 'Connected';
-        status.textContent = 'Counts refresh automatically from the server.';
+        status.textContent = 'Server-confirmed counts refresh automatically every 5 seconds.';
       } catch (error) {
         connection.textContent = 'Server unavailable';
-        status.textContent = `${error.message} Counts will refresh when the server responds.`;
+        status.textContent = `${operatorErrorMessage(error)} Counts will refresh when the server responds.`;
       } finally {
         polling = false;
       }
     }
     refreshRun();
-    window.setInterval(refreshRun, 1500);
+    window.setInterval(refreshRun, 5000);
   </script>
 </body>
 </html>
