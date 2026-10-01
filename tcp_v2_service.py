@@ -18,6 +18,7 @@ class TrayInspectionService:
         self,
         settings: Settings,
         event_handler: Callable[[InspectionEvent], None] | None = None,
+        camera_mode_handler: Callable[[int | None], None] | None = None,
     ) -> None:
         if settings.ok_coil_address == settings.ng_coil_address:
             raise ValueError("OK_COIL_ADDRESS and NG_COIL_ADDRESS must be different")
@@ -26,6 +27,8 @@ class TrayInspectionService:
         self._previous: LatchState | None = None
         self._running = True
         self._event_handler = event_handler
+        self._camera_mode_handler = camera_mode_handler
+        self._camera_mode_read_failed = False
 
     def stop(self, *_: object) -> None:
         self._running = False
@@ -44,6 +47,23 @@ class TrayInspectionService:
             logging.warning("No event handler configured; result was not submitted")
             return
         self._event_handler(event)
+
+    def _refresh_camera_mode(self) -> None:
+        if self._camera_mode_handler is None:
+            return
+        try:
+            mode = self._plc.read_camera_mode()
+        except (ConnectionException, ModbusException, OSError) as error:
+            if not self._camera_mode_read_failed:
+                logging.warning("Could not read PLC D1 camera mode: %s", error)
+            self._camera_mode_read_failed = True
+            self._camera_mode_handler(None)
+            return
+
+        if self._camera_mode_read_failed:
+            logging.info("PLC D1 camera-mode reading recovered")
+        self._camera_mode_read_failed = False
+        self._camera_mode_handler(mode)
 
     def _process_latch_change(self, current: LatchState) -> None:
         if self._previous is None:
@@ -74,8 +94,13 @@ class TrayInspectionService:
             try:
                 if self._plc.connect():
                     self._process_latch_change(self._plc.read_latches())
+                    self._refresh_camera_mode()
+                elif self._camera_mode_handler is not None:
+                    self._camera_mode_handler(None)
             except (ConnectionException, ModbusException, OSError) as error:
                 logging.warning("PLC communication error: %s", error)
+                if self._camera_mode_handler is not None:
+                    self._camera_mode_handler(None)
                 self._plc.close()
                 time.sleep(self._settings.reconnect_delay_seconds)
 

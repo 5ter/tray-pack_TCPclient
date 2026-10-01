@@ -1,7 +1,7 @@
 """The only module that communicates with the PLC.
 
-It reads only M7 (final OK latch) and M8 (final NG latch). It does not read
-the HMI register, the mode register, or individual camera inputs.
+It reads M7 (final OK latch), M8 (final NG latch), and D1 (camera mode).
+It does not read individual camera inputs or write to the PLC.
 """
 
 from dataclasses import dataclass
@@ -62,6 +62,19 @@ class PlcLatchReader:
             raise ModbusException(f"Cannot read M8/NG: {ng_response}")
 
         return LatchState(ok=bool(ok_response.bits[0]), ng=bool(ng_response.bits[0]))
+
+    def read_camera_mode(self) -> int:
+        """Read the PLC's D1 camera-mode word as a Modbus holding register."""
+        response = self._client.read_holding_registers(
+            self._settings.camera_mode_register_address,
+            count=1,
+            device_id=self._settings.modbus_device_id,
+        )
+        if response.isError():
+            raise ModbusException(f"Cannot read D1/camera mode: {response}")
+        if not response.registers:
+            raise ModbusException("Cannot read D1/camera mode: PLC returned no registers")
+        return int(response.registers[0])
 
     def close(self) -> None:
         self._client.close()

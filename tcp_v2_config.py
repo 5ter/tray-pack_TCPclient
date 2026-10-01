@@ -46,6 +46,8 @@ class Settings:
     poll_interval_seconds: float = _number("POLL_INTERVAL_SECONDS", 0.2)
     plc_timeout_seconds: float = _number("PLC_TIMEOUT_SECONDS", 1.0)
     reconnect_delay_seconds: float = _number("RECONNECT_DELAY_SECONDS", 1.0)
+    # Xinje XD/XL Modbus maps D0 to holding-register address 0, so D1 is 1.
+    camera_mode_register_address: int = _integer("CAMERA_MODE_REGISTER_ADDRESS", 1)
     machine_id: str = _text("MACHINE_ID", "TRAY-PACK-01")
     db_base_url: str = _text("DB_BASE_URL", "http://192.168.40.29:3168")
     db_timeout_seconds: float = _number("DB_TIMEOUT_SECONDS", 5.0)
@@ -53,6 +55,8 @@ class Settings:
     result_batch_interval_seconds: float = _number("RESULT_BATCH_INTERVAL_SECONDS", 10.0)
     result_batch_size: int = _integer("RESULT_BATCH_SIZE", 100)
     active_run_path: Path = Path(_text("ACTIVE_RUN_PATH", str(BASE_DIR / "active_run.json")))
+    camera_tcp_host: str = _text("CAMERA_TCP_HOST", "0.0.0.0")
+    camera_tcp_port: int = _integer("CAMERA_TCP_PORT", 5001)
     web_host: str = _text("WEB_HOST", "127.0.0.1")
     web_port: int = _integer("WEB_PORT", 3000)
     web_root: Path = BASE_DIR

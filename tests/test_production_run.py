@@ -27,6 +27,27 @@ class FakeSubmitter:
         return True
 
 
+class FakeModbusResponse:
+    registers = [1]
+
+    def isError(self) -> bool:
+        return False
+
+
+class FakeModbusClient:
+    connected = True
+
+    def __init__(self) -> None:
+        self.request: tuple[int, int, int] | None = None
+
+    def read_holding_registers(self, address: int, count: int, device_id: int) -> FakeModbusResponse:
+        self.request = (address, count, device_id)
+        return FakeModbusResponse()
+
+    def close(self) -> None:
+        pass
+
+
 class ProductionRunControllerTests(unittest.TestCase):
     def test_operator_is_saved_and_attached_to_plc_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -49,6 +70,22 @@ class ProductionRunControllerTests(unittest.TestCase):
             self.assertEqual(submitter.payloads[0]["operatorName"], "Operator A")
             reopened = ProductionRunController(settings, database, submitter)
             self.assertEqual(reopened.summary()["operator_name"], "Operator A")
+
+    def test_d1_is_read_as_configured_modbus_holding_register(self) -> None:
+        settings = Settings()
+        from tcp_v2_plc import PlcLatchReader
+
+        reader = PlcLatchReader(settings)
+        client = FakeModbusClient()
+        reader._client = client
+        try:
+            self.assertEqual(reader.read_camera_mode(), 1)
+            self.assertEqual(
+                client.request,
+                (settings.camera_mode_register_address, 1, settings.modbus_device_id),
+            )
+        finally:
+            reader.close()
 
 
 if __name__ == "__main__":

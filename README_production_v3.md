@@ -107,4 +107,22 @@ Delete child rows first because `inspection_results` references `registered_part
 
 ## PLC behavior
 
-The client remains a Modbus TCP client. It reads only the final result latches: M7 is OK and M8 is NG. It does not read camera raw inputs or write to the PLC. Results are detected once on OFF-to-ON transitions; an already-high latch at PC startup is treated as the initial state and not counted.
+The client remains a Modbus TCP client. It reads the final result latches M7 (OK) and M8 (NG), plus D1 for the camera mode. It does not read camera raw inputs or write to the PLC. Results are detected once on OFF-to-ON transitions; an already-high latch at PC startup is treated as the initial state and not counted.
+
+For Xinje XD/XL PLCs, the Modbus map documents D0 at holding-register address 0, so D1 is address 1. `CAMERA_MODE_REGISTER_ADDRESS` can override that address if the installed PLC model uses another map. The PC reads the register; the PLC/HMI remains the source of the mode.
+
+## Hikrobot camera mode TCP service
+
+The PC also listens for the Hikrobot cameras as TCP clients. Defaults are `CAMERA_TCP_HOST=0.0.0.0` and `CAMERA_TCP_PORT=5001`; the cameras connect to the PC's machine-network IP and this port. Each connection receives the current D1 value, and connected cameras receive another line when D1 changes. A camera may also send `GET_MODE` followed by a newline to request the latest value again.
+
+The line protocol is ASCII with CRLF termination: `MODE=0\r\n`, `MODE=1\r\n`, etc. If D1 cannot currently be read, the server sends `MODE=UNKNOWN\r\n` instead of guessing. The server sends the raw PLC word, not a translated label; configure the camera's VisionMaster/SCVision flow to parse the line and map the D1 values to its camera logic. Both cameras may connect at the same time. The listener does not write to the PLC.
+
+Configure each camera's communication tool as a TCP client pointed at the PC IP and port 5001, with a receive parser that uses CRLF as the message boundary. Add a Windows Firewall inbound TCP rule for this port limited to the camera IPs/subnet. The model and VisionMaster/SCVision version can change the available receive settings, so verify the exact camera configuration before production use.
+
+Settings can be overridden through the NSSM service environment:
+
+```text
+CAMERA_MODE_REGISTER_ADDRESS=1
+CAMERA_TCP_HOST=0.0.0.0
+CAMERA_TCP_PORT=5001
+```
