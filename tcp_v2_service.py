@@ -9,6 +9,7 @@ from pymodbus.exceptions import ConnectionException, ModbusException
 from tcp_v2_config import Settings
 from tcp_v2_events import InspectionEvent
 from tcp_v2_plc import LatchState, PlcLatchReader
+from tcp_v2_plc_status import PlcConnectionStatus
 
 
 class TrayInspectionService:
@@ -19,6 +20,7 @@ class TrayInspectionService:
         settings: Settings,
         event_handler: Callable[[InspectionEvent], None] | None = None,
         camera_mode_handler: Callable[[int | None], None] | None = None,
+        plc_status: PlcConnectionStatus | None = None,
     ) -> None:
         if settings.ok_coil_address == settings.ng_coil_address:
             raise ValueError("OK_COIL_ADDRESS and NG_COIL_ADDRESS must be different")
@@ -28,6 +30,7 @@ class TrayInspectionService:
         self._running = True
         self._event_handler = event_handler
         self._camera_mode_handler = camera_mode_handler
+        self._plc_status = plc_status or PlcConnectionStatus()
         self._camera_mode_read_failed = False
 
     def stop(self, *_: object) -> None:
@@ -93,12 +96,17 @@ class TrayInspectionService:
         while self._running:
             try:
                 if self._plc.connect():
-                    self._process_latch_change(self._plc.read_latches())
+                    latch_state = self._plc.read_latches()
+                    self._plc_status.mark_connected()
+                    self._process_latch_change(latch_state)
                     self._refresh_camera_mode()
-                elif self._camera_mode_handler is not None:
-                    self._camera_mode_handler(None)
+                else:
+                    self._plc_status.mark_disconnected("PLC connection failed")
+                    if self._camera_mode_handler is not None:
+                        self._camera_mode_handler(None)
             except (ConnectionException, ModbusException, OSError) as error:
                 logging.warning("PLC communication error: %s", error)
+                self._plc_status.mark_disconnected(str(error))
                 if self._camera_mode_handler is not None:
                     self._camera_mode_handler(None)
                 self._plc.close()

@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from tcp_v2_db import DatabaseApiClient, DatabaseApiError
+from tcp_v2_plc_status import PlcConnectionStatus
 from tcp_v2_run import ProductionRunController, RunError
 
 
@@ -24,6 +25,7 @@ def _handler_class(
     database: DatabaseApiClient,
     run_controller: ProductionRunController,
     static_root: Path,
+    plc_status: PlcConnectionStatus,
 ) -> type[BaseHTTPRequestHandler]:
     """Create a request handler for the operator UI and current production run."""
 
@@ -92,6 +94,8 @@ def _handler_class(
                 self.end_headers()
             elif path == "/health":
                 self._send_json(HTTPStatus.OK, {"ok": True})
+            elif path == "/api/plc-status":
+                self._send_json(HTTPStatus.OK, plc_status.snapshot())
             elif path == "/api/parts":
                 try:
                     self._send_json(HTTPStatus.OK, {"parts": database.list_parts()})
@@ -144,11 +148,12 @@ class OperatorWebServer:
         static_root: Path,
         database: DatabaseApiClient,
         run_controller: ProductionRunController,
+        plc_status: PlcConnectionStatus,
     ) -> None:
         if not static_root.is_dir():
             raise RuntimeError(f"WEB_ROOT does not exist or is not a directory: {static_root}")
         self._server = ThreadingHTTPServer(
-            (host, port), _handler_class(database, run_controller, static_root)
+            (host, port), _handler_class(database, run_controller, static_root, plc_status)
         )
         self._thread = Thread(target=self._server.serve_forever, name="operator-web", daemon=True)
         self._started = False

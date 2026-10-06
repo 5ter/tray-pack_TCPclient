@@ -35,3 +35,15 @@ function operatorErrorMessage(error) {
     ? error.message
     : 'An unexpected error occurred. Please try again or contact maintenance.';
 }
+
+function filterPartNumbers(partNumbers, searchText) {
+  const query = String(searchText || '').trim().toLowerCase();
+  if (!Array.isArray(partNumbers)) return [];
+  return partNumbers.filter(partNumber =>
+    typeof partNumber === 'string' && partNumber.toLowerCase().includes(query)
+  );
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { filterPartNumbers };
+}

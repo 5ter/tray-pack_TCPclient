@@ -2,7 +2,7 @@
 
 ## Operator flow
 
-1. The operator opens `Production_Select.html`, enters their name or ID, and chooses a registered part number.
+1. The operator opens `Production_Select.html`, enters their name or ID, searches the registered part-number list, and selects a part number.
 2. Starting production creates a new run ID and saves the self-reported operator name/ID with the active run. Starting again, even with the same part, starts a separate run with fresh counts.
 3. The PC polls PLC M7 (OK) and M8 (NG). Each OFF-to-ON transition creates an event with a unique ID and is associated with the selected part and run ID.
 4. The PC commits the result to its local SQLite outbox (`result_outbox.sqlite3`) before returning to PLC polling.
@@ -31,8 +31,9 @@ The Python service still listens on `127.0.0.1:3000` by default and serves the s
 - `GET /api/parts` loads the registered part-number dropdown.
 - `POST /api/run/start` validates a part number and creates the new local run context.
 - `GET /api/run-summary` reads counts for the active run from the DB API.
+- `GET /api/plc-status` exposes whether the latest PLC M7/M8 poll succeeded.
 
-`/run-summary` is a read-only query: the Node API counts the OK/NG rows already stored for the active run in MySQL. The running page polls it every 5 seconds so counts update without a manual refresh. Results are uploaded in batches every 10 seconds, so the count can naturally lag the PLC by up to roughly one upload interval plus the next page refresh. The polling does not create or submit inspection results.
+`/run-summary` is a read-only query: the Node API counts the OK/NG rows already stored for the active run in MySQL. The running page refreshes those counts every 3 seconds so they update without a manual refresh. Results are uploaded in batches every 10 seconds, so the count can naturally lag the PLC by up to roughly one upload interval plus the next page refresh. The polling does not create or submit inspection results. A separate PLC badge reports whether the client most recently read M7/M8 successfully; it does not infer PLC health from the database/API connection.
 
 The legacy URLs `/Log_In.html`, `/Register.html`, and `/Running.html` are still redirected to the new screens by the Python web server. Registration keeps the existing administrator login and registers only a unique part number.
 

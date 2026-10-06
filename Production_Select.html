@@ -18,6 +18,15 @@
     .secondary { color: #274060; background: #eaf0f8; }
     .row { display: flex; gap: 10px; margin-top: 12px; }
     .row > * { flex: 1; }
+    .part-picker { position: relative; }
+    .part-picker[hidden], .part-dropdown[hidden] { display: none; }
+    .part-picker-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; border: 1px solid #cbd5e1; border-radius: 9px; color: #162033; background: white; font: inherit; text-align: left; }
+    .part-dropdown { position: absolute; z-index: 10; top: calc(100% + 5px); left: 0; width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px; background: white; box-shadow: 0 12px 28px #17345c26; }
+    #partSearch { padding: 10px 12px; }
+    #partOptions { max-height: 220px; margin-top: 8px; overflow-y: auto; }
+    .part-option { display: block; width: 100%; border-radius: 6px; padding: 10px; color: #162033; background: white; text-align: left; font-weight: 400; }
+    .part-option:hover, .part-option:focus, .part-option[aria-selected="true"] { outline: none; background: #edf4ff; }
+    #partSearchStatus { min-height: 20px; margin: 8px 2px 2px; color: #637189; font-size: 13px; }
     #message { min-height: 24px; margin-top: 14px; color: #475467; text-align: center; }
     #message.error, #loginMessage.error { color: #b42318; }
     .modal { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; background: #101828aa; }
@@ -35,10 +44,18 @@
     <form id="startForm">
       <label for="operatorName">Operator name / ID</label>
       <input id="operatorName" maxlength="100" required autocomplete="off" placeholder="Enter your name or ID">
-      <label for="partNumber">Part number</label>
-      <select id="partNumber" required>
-        <option value="">Loading registered parts…</option>
-      </select>
+      <label id="partNumberLabel">Part number</label>
+      <div id="partPicker" class="part-picker" hidden>
+        <input id="partNumber" type="hidden" name="partNumber">
+        <button id="partPickerToggle" class="part-picker-toggle" type="button" aria-haspopup="listbox" aria-controls="partOptions" aria-expanded="false" aria-labelledby="partNumberLabel selectedPartLabel">
+          <span id="selectedPartLabel">Select a part number</span><span aria-hidden="true">▾</span>
+        </button>
+        <div id="partDropdown" class="part-dropdown" hidden>
+          <input id="partSearch" type="search" autocomplete="off" aria-label="Search part numbers" placeholder="Type to search part numbers">
+          <div id="partOptions" role="listbox" aria-label="Registered part numbers"></div>
+          <div id="partSearchStatus" role="status"></div>
+        </div>
+      </div>
       <button id="startButton" class="primary" type="submit">Start production</button>
     </form>
     <div class="row">
@@ -65,35 +82,149 @@
   <script src="/ui_helpers.js"></script>
   <script>
     const DB_API_URL = 'http://192.168.40.29:3168';
-    const partSelect = document.getElementById('partNumber');
+    const partPicker = document.getElementById('partPicker');
+    const partPickerToggle = document.getElementById('partPickerToggle');
+    const partDropdown = document.getElementById('partDropdown');
+    const partOptions = document.getElementById('partOptions');
+    const partNumberInput = document.getElementById('partNumber');
+    const selectedPartLabel = document.getElementById('selectedPartLabel');
+    const partSearch = document.getElementById('partSearch');
+    const partSearchStatus = document.getElementById('partSearchStatus');
     const message = document.getElementById('message');
+    let registeredPartNumbers = [];
+
+    function renderPartOptions() {
+      const matches = filterPartNumbers(registeredPartNumbers, partSearch.value);
+      partOptions.replaceChildren();
+
+      for (const partNumber of matches) {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'part-option';
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', String(partNumber === partNumberInput.value));
+        option.textContent = partNumber;
+        option.addEventListener('click', () => {
+          partNumberInput.value = partNumber;
+          selectedPartLabel.textContent = partNumber;
+          partPickerToggle.setAttribute('aria-label', `Part number: ${partNumber}. Open to change.`);
+          closePartDropdown(true);
+        });
+        partOptions.appendChild(option);
+      }
+
+      const query = partSearch.value.trim();
+      if (matches.length === 0) {
+        partSearchStatus.textContent = query
+          ? `No part numbers match "${query}". Try another search.`
+          : 'No registered part numbers are available.';
+      } else if (query) {
+        partSearchStatus.textContent = `${matches.length} matching part number${matches.length === 1 ? '' : 's'}.`;
+      } else {
+        partSearchStatus.textContent = `${matches.length} part number${matches.length === 1 ? '' : 's'}. Type to search.`;
+      }
+    }
+
+    function closePartDropdown(returnFocus = false) {
+      partDropdown.hidden = true;
+      partPickerToggle.setAttribute('aria-expanded', 'false');
+      if (returnFocus) partPickerToggle.focus();
+    }
+
+    function openPartDropdown() {
+      if (registeredPartNumbers.length === 0) return;
+      partDropdown.hidden = false;
+      partPickerToggle.setAttribute('aria-expanded', 'true');
+      partSearch.value = '';
+      renderPartOptions();
+      partSearch.focus();
+    }
+
+    partPickerToggle.addEventListener('click', () => {
+      if (partDropdown.hidden) openPartDropdown();
+      else closePartDropdown();
+    });
+    partSearch.addEventListener('input', () => {
+      const matches = filterPartNumbers(registeredPartNumbers, partSearch.value);
+      if (partNumberInput.value && !matches.includes(partNumberInput.value)) {
+        partNumberInput.value = '';
+        selectedPartLabel.textContent = 'Select a part number';
+        partPickerToggle.removeAttribute('aria-label');
+      }
+      renderPartOptions();
+    });
+    partSearch.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePartDropdown(true);
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        partOptions.querySelector('.part-option')?.focus();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+      }
+    });
+    partOptions.addEventListener('keydown', event => {
+      const options = [...partOptions.querySelectorAll('.part-option')];
+      const currentIndex = options.indexOf(document.activeElement);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePartDropdown(true);
+      } else if (event.key === 'ArrowDown' && options.length) {
+        event.preventDefault();
+        options[(currentIndex + 1) % options.length].focus();
+      } else if (event.key === 'ArrowUp' && options.length) {
+        event.preventDefault();
+        options[(currentIndex - 1 + options.length) % options.length].focus();
+      } else if (event.key === 'Home' && options.length) {
+        event.preventDefault();
+        options[0].focus();
+      } else if (event.key === 'End' && options.length) {
+        event.preventDefault();
+        options[options.length - 1].focus();
+      }
+    });
+    document.addEventListener('click', event => {
+      if (!partPicker.contains(event.target)) closePartDropdown();
+    });
 
     async function loadParts() {
       const startButton = document.getElementById('startButton');
-      partSelect.disabled = true;
+      closePartDropdown();
+      partPicker.hidden = true;
       startButton.disabled = true;
-      partSelect.innerHTML = '<option value="">Loading registered parts…</option>';
+      registeredPartNumbers = [];
+      partNumberInput.value = '';
+      selectedPartLabel.textContent = 'Select a part number';
+      partPickerToggle.removeAttribute('aria-label');
+      partSearchStatus.textContent = '';
+      partDropdown.hidden = true;
       message.textContent = '';
       message.classList.remove('error');
       try {
         const data = await fetchJson('/api/parts');
         if (!Array.isArray(data.parts)) throw new Error('The server returned an invalid part list. Please contact maintenance.');
         if (data.parts.length === 0) {
-          partSelect.innerHTML = '<option value="">No registered parts - register one below</option>';
           message.textContent = 'No part numbers are registered. Select "Register new part" below to add one.';
           return;
         }
-        partSelect.disabled = false;
-        startButton.disabled = false;
-        partSelect.innerHTML = '<option value="">Select a part number</option>';
-        for (const part of data.parts) {
-          const option = document.createElement('option');
-          option.value = part.partNumber;
-          option.textContent = part.partNumber;
-          partSelect.appendChild(option);
+        registeredPartNumbers = data.parts.map(part => {
+          if (!part || typeof part.partNumber !== 'string') {
+            throw new Error('The server returned an invalid part list. Please contact maintenance.');
+          }
+          return part.partNumber.trim();
+        }).filter(Boolean);
+        if (registeredPartNumbers.length === 0) {
+          message.textContent = 'No part numbers are registered. Select "Register new part" below to add one.';
+          return;
         }
+        partPicker.hidden = false;
+        startButton.disabled = false;
+        renderPartOptions();
       } catch (error) {
-        partSelect.innerHTML = '<option value="">Part list unavailable</option>';
+        registeredPartNumbers = [];
+        partPicker.hidden = true;
+        partSearchStatus.textContent = '';
         message.textContent = operatorErrorMessage(error);
         message.classList.add('error');
       }
@@ -102,13 +233,18 @@
     document.getElementById('startForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       const button = document.getElementById('startButton');
+      if (!partNumberInput.value) {
+        message.textContent = 'Select a part number before starting production.';
+        message.classList.add('error');
+        return;
+      }
       button.disabled = true;
       message.textContent = 'Starting run...';
       try {
         await fetchJson('/api/run/start', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            partNumber: partSelect.value,
+            partNumber: partNumberInput.value,
             operatorName: document.getElementById('operatorName').value.trim()
           })
         });
@@ -116,7 +252,7 @@
       } catch (error) {
         message.textContent = operatorErrorMessage(error);
         message.classList.add('error');
-        button.disabled = partSelect.disabled;
+        button.disabled = registeredPartNumbers.length === 0;
       }
     });
 

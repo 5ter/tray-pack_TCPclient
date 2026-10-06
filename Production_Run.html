@@ -10,6 +10,11 @@
     body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; }
     main { width: min(100%, 760px); background: white; border-radius: 18px; padding: 32px; box-shadow: 0 16px 50px #17345c1c; }
     header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .indicators { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+    .indicator { display: inline-flex; align-items: center; min-height: 30px; padding: 5px 10px; border-radius: 16px; font-size: 13px; font-weight: 650; }
+    .indicator.connected { color: #067647; background: #e9f8ef; }
+    .indicator.disconnected { color: #b42318; background: #fff0ed; }
+    .indicator.connecting, .indicator.unavailable { color: #637189; background: #f1f4f8; }
     h1 { margin: 0; font-size: 28px; }
     #partNumber { margin: 24px 0 4px; font-size: clamp(26px, 6vw, 42px); font-weight: 750; overflow-wrap: anywhere; }
     .muted { color: #637189; }
@@ -27,7 +32,10 @@
   <main>
     <header>
       <h1>Production run</h1>
-      <span id="connection" class="muted">Connecting…</span>
+      <div class="indicators" aria-live="polite">
+        <span id="connection" class="indicator connecting">Data server: Connecting…</span>
+        <span id="plcConnection" class="indicator connecting">PLC: Connecting…</span>
+      </div>
     </header>
     <div id="partNumber">Loading run…</div>
     <div id="operatorInfo" class="muted"></div>
@@ -37,12 +45,31 @@
       <div class="card ng">NG<span id="ngCount" class="number">0</span></div>
       <div class="card">Total inspected<span id="totalCount" class="number">0</span></div>
     </section>
+    <div id="plcDetail" class="muted" role="status">Waiting for the first successful PLC poll.</div>
     <div id="status" role="status"></div>
     <a href="/Production_Select.html">Change part / start a new run</a>
   </main>
   <script src="/ui_helpers.js"></script>
   <script>
+    const REFRESH_INTERVAL_MS = 3000;
     let polling = false;
+    let plcPolling = false;
+
+    function setIndicator(element, state, text) {
+      element.textContent = text;
+      element.classList.remove('connected', 'disconnected', 'connecting', 'unavailable');
+      element.classList.add(state);
+    }
+
+    function formatPlcTime(value) {
+      if (!value) return '';
+      const time = new Date(value);
+      if (Number.isNaN(time.getTime())) return '';
+      return time.toLocaleString('en-MY', {
+        timeZone: 'Asia/Kuala_Lumpur', dateStyle: 'short', timeStyle: 'medium'
+      });
+    }
+
     async function refreshRun() {
       if (polling) return;
       polling = true;
@@ -60,17 +87,51 @@
         document.getElementById('okCount').textContent = data.okCount;
         document.getElementById('ngCount').textContent = data.ngCount;
         document.getElementById('totalCount').textContent = data.totalCount;
-        connection.textContent = 'Connected';
-        status.textContent = 'Server-confirmed counts refresh automatically every 5 seconds.';
+        setIndicator(connection, 'connected', 'Data server: Connected');
+        status.textContent = 'Server-confirmed counts refresh automatically every 3 seconds.';
       } catch (error) {
-        connection.textContent = 'Server unavailable';
+        setIndicator(connection, 'unavailable', 'Data server: Unavailable');
         status.textContent = `${operatorErrorMessage(error)} Counts will refresh when the server responds.`;
       } finally {
         polling = false;
       }
     }
+
+    async function refreshPlcStatus() {
+      if (plcPolling) return;
+      plcPolling = true;
+      const badge = document.getElementById('plcConnection');
+      const detail = document.getElementById('plcDetail');
+      try {
+        const data = await fetchJson('/api/plc-status', { cache: 'no-store' });
+        if (data.connected) {
+          setIndicator(badge, 'connected', 'PLC: Connected');
+          const lastSuccess = formatPlcTime(data.lastSuccessUtc);
+          detail.textContent = lastSuccess
+            ? `M7/M8 polling is responding. Last successful PLC poll: ${lastSuccess}.`
+            : 'M7/M8 polling is responding.';
+        } else if (data.state === 'connecting') {
+          setIndicator(badge, 'connecting', 'PLC: Connecting…');
+          detail.textContent = 'Waiting for the first successful M7/M8 poll.';
+        } else {
+          setIndicator(badge, 'disconnected', 'PLC: Disconnected');
+          const lastSuccess = formatPlcTime(data.lastSuccessUtc);
+          detail.textContent = lastSuccess
+            ? `PLC polling failed. Last successful poll: ${lastSuccess}. Check the PC client log for details.`
+            : 'No successful PLC poll yet. Check PLC power/network and the PC client log.';
+        }
+      } catch {
+        setIndicator(badge, 'unavailable', 'PLC: Status unavailable');
+        detail.textContent = 'The PC could not read its PLC polling status.';
+      } finally {
+        plcPolling = false;
+      }
+    }
+
     refreshRun();
-    window.setInterval(refreshRun, 5000);
+    refreshPlcStatus();
+    window.setInterval(refreshRun, REFRESH_INTERVAL_MS);
+    window.setInterval(refreshPlcStatus, REFRESH_INTERVAL_MS);
   </script>
 </body>
 </html>

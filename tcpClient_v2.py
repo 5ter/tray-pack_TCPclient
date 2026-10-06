@@ -12,6 +12,7 @@ from tcp_v2_config import BASE_DIR, Settings
 from tcp_v2_camera_server import CameraModeTcpServer
 from tcp_v2_db import DatabaseApiClient
 from tcp_v2_outbox import LocalResultOutbox
+from tcp_v2_plc_status import PlcConnectionStatus
 from tcp_v2_run import ProductionRunController
 from tcp_v2_service import TrayInspectionService
 from tcp_v2_sender import ResultSubmitter
@@ -41,12 +42,16 @@ def main() -> int:
         batch_size=settings.result_batch_size,
     )
     runs = ProductionRunController(settings, database, submitter)
-    web_server = OperatorWebServer(settings.web_host, settings.web_port, settings.web_root, database, runs)
+    plc_status = PlcConnectionStatus()
+    web_server = OperatorWebServer(
+        settings.web_host, settings.web_port, settings.web_root, database, runs, plc_status
+    )
     camera_server = CameraModeTcpServer(settings.camera_tcp_host, settings.camera_tcp_port)
     service = TrayInspectionService(
         settings,
         event_handler=runs.handle_inspection_event,
         camera_mode_handler=camera_server.update_mode,
+        plc_status=plc_status,
     )
     signal.signal(signal.SIGINT, service.stop)
     signal.signal(signal.SIGTERM, service.stop)
